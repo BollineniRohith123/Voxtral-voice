@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  voice-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voxtral-orpheus-assistant
+    restart: unless-stopped
+    
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Environment variables
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
+      - TOKENIZERS_PARALLELISM=false
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_TF32_OVERRIDE=0
+      - TORCH_CUDNN_V8_API_ENABLED=1
+    
+    # Port mapping
+    ports:
+      - "8555:8555"
+    
+    # Volume mounts
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./temp:/app/temp
+      - voice_assistant_cache:/root/.cache
+    
+    # Resource limits (adjust based on your system)
+    mem_limit: 32g
+    memswap_limit: 32g
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8555/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  voice_assistant_cache:
+    driver: local
