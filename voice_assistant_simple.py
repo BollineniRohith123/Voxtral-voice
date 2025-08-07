@@ -34,6 +34,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+# Create logs directory if it doesn't exist
+os.makedirs('logs', exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -175,33 +178,63 @@ class SimpleVoiceProcessor:
             return "I had trouble processing your audio. Could you try again?"
 
 class OrpheusModel:
-    """Simplified Orpheus TTS model handler"""
-    
+    """Robust Orpheus TTS model handler with graceful fallback"""
+
     def __init__(self):
         self.model = None
         self.model_loaded = False
-    
+        self.orpheus_available = False
+
     async def initialize(self):
-        """Initialize Orpheus TTS model"""
+        """Initialize Orpheus TTS model with robust error handling"""
         try:
-            logger.info("Loading Orpheus TTS model...")
-            
-            from orpheus_speech import OrpheusModel as OrpheusEngine
-            
-            # Initialize with A40 optimizations
-            self.model = OrpheusEngine(
-                model_name=config.orpheus_model_id,
-                device=config.device,
-                dtype=config.torch_dtype
-            )
-            
-            self.model_loaded = True
-            logger.info("✅ Orpheus TTS model loaded successfully")
-            
+            logger.info("Checking Orpheus TTS availability...")
+
+            # Test import first
+            try:
+                from orpheus_speech import OrpheusModel as OrpheusEngine
+                self.orpheus_available = True
+                logger.info("✅ Orpheus module found")
+            except ImportError as e:
+                logger.warning(f"⚠️ Orpheus module not available: {e}")
+                logger.info("🔄 Attempting to install orpheus-speech...")
+
+                # Try to install orpheus-speech
+                import subprocess
+                try:
+                    subprocess.run(['pip', 'install', '--force-reinstall', '--no-deps', 'orpheus-speech==0.1.0'],
+                                 check=True, capture_output=True)
+                    subprocess.run(['pip', 'install', 'snac==1.2.1'],
+                                 check=True, capture_output=True)
+
+                    # Try import again
+                    from orpheus_speech import OrpheusModel as OrpheusEngine
+                    self.orpheus_available = True
+                    logger.info("✅ Orpheus installed and imported successfully")
+                except Exception as install_error:
+                    logger.warning(f"⚠️ Could not install/import orpheus-speech: {install_error}")
+                    self.orpheus_available = False
+
+            if self.orpheus_available:
+                # Initialize the model
+                logger.info("Loading Orpheus TTS model...")
+                self.model = OrpheusEngine(
+                    model_name=config.orpheus_model_id,
+                    device=config.device,
+                    dtype=config.torch_dtype
+                )
+
+                self.model_loaded = True
+                logger.info("✅ Orpheus TTS model loaded successfully")
+            else:
+                logger.warning("⚠️ Running without TTS - text responses only")
+                self.model_loaded = False
+
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Orpheus: {e}")
-            # Don't raise - continue without TTS
+            logger.warning(f"⚠️ Failed to initialize Orpheus: {e}")
+            logger.info("🔄 Continuing without TTS - text responses only")
             self.model_loaded = False
+            self.orpheus_available = False
     
     def detect_emotion(self, text: str) -> str:
         """Simple emotion detection from text"""
@@ -222,21 +255,25 @@ class OrpheusModel:
         return "neutral"
     
     async def synthesize_speech(self, text: str, voice: str = "tara", session_id: str = "") -> Optional[bytes]:
-        """Synthesize speech with Orpheus"""
+        """Synthesize speech with Orpheus or return None if not available"""
         try:
+            if not self.orpheus_available:
+                logger.debug(f"Orpheus not available, skipping TTS for session {session_id}")
+                return None
+
             if not self.model_loaded:
                 logger.warning("Orpheus model not loaded, skipping TTS")
                 return None
-            
+
             logger.info(f"Synthesizing (session {session_id}): '{text[:50]}...' [voice: {voice}]")
-            
+
             # Generate speech
             speech_generator = self.model.generate_speech(
                 prompt=text,
                 voice=voice,
                 temperature=0.7
             )
-            
+
             # Collect audio chunks
             audio_chunks = []
             try:
@@ -246,13 +283,14 @@ class OrpheusModel:
             except Exception as gen_error:
                 logger.error(f"Error during speech generation: {gen_error}")
                 return None
-            
+
             if audio_chunks:
                 combined_audio = b''.join(audio_chunks)
+                logger.info(f"✅ Generated {len(combined_audio)} bytes of audio for session {session_id}")
                 return combined_audio
-            
+
             return None
-            
+
         except Exception as e:
             logger.error(f"TTS synthesis error for session {session_id}: {e}")
             return None
