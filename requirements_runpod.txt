@@ -1,18 +1,21 @@
-# TESTED AND VERIFIED REQUIREMENTS FOR RUNPOD A40
+# BULLETPROOF REQUIREMENTS FOR RUNPOD A40 (CUDA 12.4)
 # These exact versions work together without conflicts
 
-# Core PyTorch (CUDA 11.8 compatible)
-torch==2.4.0+cu118
-torchaudio==2.4.0+cu118
-torchvision==0.19.0+cu118
+# Core PyTorch (CUDA 12.4 compatible - RunPod default)
+torch==2.4.0
+torchaudio==2.4.0
+torchvision==0.19.0
+
+# Critical: NumPy version MUST be <2.0.0 for compatibility
+numpy==1.26.4
 
 # Voxtral Requirements (EXACT VERSIONS)
 transformers==4.54.0
-mistral-common[audio]==1.8.1
+mistral-common[audio]==1.8.2
 accelerate==0.33.0
 
 # vLLM for Voxtral (CRITICAL - exact version)
-vllm[audio]==0.10.0
+vllm==0.6.3.post1
 
 # Orpheus TTS (EXACT VERSION - newer versions break)
 orpheus-speech==0.1.0
@@ -26,7 +29,6 @@ python-multipart==0.0.9
 # Audio Processing (TESTED VERSIONS)
 librosa==0.10.2
 soundfile==0.12.1
-numpy==1.24.4
 scipy==1.11.4
 
 # Additional Requirements
